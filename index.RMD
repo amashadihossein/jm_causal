@@ -1,5 +1,5 @@
 ---
-title: "Inter-related Time-to-Event and Longtidinal Processes"
+title: "Inter-related Time-to-Event and Longitudinal Processes"
 subtitle: "A causal approach to data generation"
 author: "Afshin Mashadi-Hossein"
 date: "`r Sys.Date()`"
