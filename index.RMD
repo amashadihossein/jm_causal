@@ -1,0 +1,515 @@
+---
+title: "Inter-related Time-to-Event and Longtidinal Processes"
+subtitle: "A causal approach to data generation"
+author: "Afshin Mashadi-Hossein"
+date: "`r Sys.Date()`"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+<style type="text/css">
+.remark-slide-content {
+    font-size: 15px;
+}
+
+.center2 {
+  margin: 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  -ms-transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%);
+}
+
+.remark-code, .remark-inline-code { font-family: 'Source Code Pro', 'Lucida Console', Monaco, monospace;
+                                    font-size: 90%;
+                                  }
+</style>
+
+```{r setup, include=F}
+source("./R/global.R")
+```
+
+## Overview
+
+.pull-left[
+### 1- Motivation
+ - [Rievew of the problem](#3)
+ - [Why simulation and why DAG-based](#4)
+
+
+### 2- Building the DAG sequentially
+ - [Step 1: Expected longitudinal Process](#7)
+ - [Step 2: Added the random patient effect](#8)
+ - [Step 3: Adding observation noise](#11)
+ - [Step 4: Adding some baseline factors](#12)
+ - [Step 5: Adding TTE as a function longitudinal process](#13)
+]
+
+.pull-right[
+### 3- Evaluting the Simulation
+ - [Evaluting the TTE outcome](#22)
+ - [KM plots](#23)
+ - [Cumulative hazard plots](#24)
+
+### 4- Application
+- [bottom right](#16)
+
+]
+
+
+---
+## Review (JM Intro)
+
+<iframe src="https://amashadihossein.github.io/jm_intro/#3"
+height="535" width="720" ></iframe>
+
+
+---
+## Simulating joint TTE/longitudinal process is useful
+
+### Why simulation? 
+
+- Establish qualitative understanding of the dynamics
+- Establish rough quantitative understanding of model parameters
+- Power analysis in complex setting
+- Method comparison
+
+### Why a causal approach?
+
+- Using a causal language of Directed Acyclic Graphs (DAGs) is accessible to SME
+ collaborators
+- Simulation via DAGs more amenable to causal inference frameworks
+- Available JM solvers have limitations by design or in practice (computational)
+
+---
+## Two views on data generating approach
+
+### The model-first view
+- Simulation as described [here](https://amashadihossein.github.io/jm_intro/#26),
+has a probabilistic-model-first view of the data generating mechanism
+
+- It more or less seeks a minimalist set of parameters to describe a single 
+joint-likelihood that can do a decent job describing the process
+
+### The process-first view
+
+- Simulation based on **sequential** realization of nodes in a DAGs over time, 
+views data generation closer to what naturally/intuitively occurs in the process.
+
+- In practice the number of parameters grow as a function of time
+
+- Getting the data output to conform to a minimalist probabilistic model 
+requires more work though
+
+---
+class: center, middle
+# Building the DAG sequentially
+
+---
+## Step 1: The expected longitudinal process
+
+To abstract out the mechanistic modeling of the expected temporal pattern, which
+while interesting could be reasonably considered out of scope, We could take the 
+"typical" temporal pattern to describe $E[y|t,group]$
+<iframe src="https://amashadihossein.github.io/jm_intro/#28"
+height="482" width="650" ></iframe>
+
+---
+## Step 2: Adding the random effect to unit of obs (patient)
+
+The probabilistic model envisioned a mixed effect to explain deviation of each
+data point from $E[y|t=t^*,group=group^*]$
+
+
+### General:
+
+$$y_i(t) = x_i(t) \beta + z_i(t) b_i + \epsilon_i(t) \; (1)$$
+$$\eta_i(t) := E[y_i] = x_i(t) \beta + z_i(t) b_i$$
+
+- $y_i(t)$ is the observed value of biomarker at time $t$
+- $\eta_i(t)$ is the unobserved true value of biomarker at time $t$
+- $\beta$ is the vector of fix-effect parameters
+- $b_i$ is the vector of random-effect parameters for subject $i$ ~ $N(0, D)$
+- $\epsilon_i$ is the iid Gaussian noise ~ $N(0,\sigma)$
+
+
+
+
+
+### Specific implementation:
+
+In the specific case of this simulation, $b_i$ was a random intercept  ~ $N(0, \sigma)$
+To translated to DAG
+
+
+
+.footnote[NOTE: previous simulation used an AR1 for covairance matrix $D$] 
+
+---
+
+## Step 2: `simcausal` implementation
+
+Data generating process: assignment of group $\rightarrow$ random effect
+$\rightarrow$ average temporal profile by group 
+
+```{r dag, message=FALSE,echo=T}
+t_obs <- 1:30
+t.end <- length(t_obs)
+D <- DAG.empty() +
+  node(name = "grps", distr = "rbern", prob = .5) +
+  node("unitnoise",t=1, distr="rnorm", mean=0, sd=.05) +
+  node("ybar", t = 1:t.end, distr = "aveProfile", time=t, 
+       grp=grps, unitnoise= unitnoise[1])
+obj_D <- set.DAG(D)
+```
+
+.pull-left[
+
+#### DAG: shown t = 1, 2 (out of 30) 
+```{r, echo=F, message=F, fig.retina = 6, fig.height=5, fig.width= 6, fig.align='center'}
+set.seed(9)
+simcausal::plotDAG(obj_D,
+                   vertex_attrs = list(size = 40, label.cex = 1.5),
+                   xjitter = 5, yjitter = 5,
+                   tmax = 2)
+```
+
+]
+
+.pull-left[
+
+#### Simulation: n = 100
+
+```{r, echo=T, message=F}
+sim_ybar <- simcausal::sim(DAG = obj_D,n = 100)
+glue::glue("columns:{ c(colnames(sim_ybar)[c(1:4)], \"...\" ,
+           colnames(sim_ybar)[33])}")
+```
+
+]
+
+---
+## Step 2: `simcausal` implementation $\rightarrow$ visulized
+
+```{r, echo=T, message=F,fig.retina = 6, fig.height=5, fig.width= 6, fig.align='center'}
+sim_ybar %>% tidyr::pivot_longer(cols = ybar_1:ybar_30,values_to = "ybar") %>%
+    mutate(t = as.numeric(gsub("ybar_","",name))) %>%
+    mutate(grps = as.character(grps)) %>%
+    ggplot(aes(x = t, y=ybar, colour = grps))+
+    geom_line(aes(group = ID), alpha = .2)+
+    ylab(expression(eta[i](t)))+
+    ggsci::scale_color_jama()
+  
+```
+
+---
+## Step 3: Adding observartion noise
+
+```{r, message=FALSE,echo=T}
+D <- D + node("y",t = 1:t.end, distr = "rnorm", mean = ybar[t], sd = 0.02)
+obj_D <- set.DAG(D)
+```
+
+.pull-left[
+
+#### DAG: shown t = 1, 2, 3 (out of 30) 
+
+```{r, echo=T, message=F, fig.retina = 6, fig.height=5, fig.width= 6, fig.align='center'}
+simcausal::plotDAG(obj_D,
+                   edge_attrs = list(arrow.size = 1),
+                   vertex_attrs = list(label.cex = 1.5),
+                   tmax = 3)
+```
+
+]
+
+.pull-right[
+
+#### Simulation: n = 100
+
+```{r, echo=T, message=F}
+sim_y <- simcausal::sim(DAG = obj_D,n = 100)
+```
+
+```{r, echo=F, message=F, fig.retina = 6, fig.height=5, fig.width= 6, fig.align='center'}
+sim_y %>% 
+  select(ID,grps,contains("y_")) %>%
+  tidyr::pivot_longer(cols = y_1:y_30, values_to = "y") %>%
+  mutate(t = as.numeric(gsub("y_","",name))) %>%
+  mutate(grps = as.character(grps)) %>%
+  ggplot(aes(x = t, y=y, colour = grps))+
+  geom_line(aes(group = ID), alpha = .2)+
+  ggsci::scale_color_jama()
+```
+
+]
+
+---
+## Step 4: Adding some baseline factors
+
+To avoid crowding the DAG too much, we add a single baseline factor, `x1`. This
+baseline will factor in probability of event and remains directly unrelated to 
+the longitudinal process
+
+```{r, echo=T, message=FALSE}
+D <- D + node(name = "x1",t=1, distr = "rnorm", mean = 0, sd = 1/15)
+obj_D <- set.DAG(D)
+simcausal::plotDAG(obj_D,
+                   edge_attrs = list(arrow.size = 1),
+                   vertex_attrs = list(label.cex = 1.5),
+                   tmax = 3)
+```
+
+
+---
+## Step 5: Adding the TTE as function of $\eta_i(t)$
+
+### General:
+
+The link between probability of and event and unobserved value of the biomarker, 
+$\eta_i$, was defined through the hazard model eq (2).
+
+$$h_i(t | M_i(t), w_i) :=$$
+$$lim_{\Delta \to 0} P\lbrace t \leq T < t + \Delta t | T \geq t, M_i(t), w_i\rbrace/ \Delta t =$$
+$$h_0(t)exp\lbrace w_i \gamma + f(\alpha, w_i, b_i, M_i(t))\rbrace \; (2)$$
+<br>
+Commonly used examples of functions $f$ are
+$$f:= \alpha \eta_i(t) \; (3)$$
+$$f:= \alpha_1 \eta_i(t) + \alpha_2 \eta_i^{'}(t)\; (4)$$ where
+$$\eta_i^{'}(t) = \frac{d\eta_i(t)}{dt}\; (5)$$
+---
+## Step 5: Adding the TTE as function of $\eta_i(t)$
+
+### Specific implementation:
+
+- Base hazard was defined $h_0(t) = \lambda a t^{a-1}$ with $a = 1.5$ and $\lambda = 1$
+- $f$ was defined as eq(3) with $\alpha = 3$ (unless otherwise stated)
+- $w_i ~ N(\mu = 0,\sigma = 1/15)$ and $\gamma\ = 1$
+
+To calculate hazard
+```{r, echo=TRUE}
+add_hz <- function(t, eta, alpha = 3, gamma_x = 0, beta_w = 0,
+                  shape_wb = 1.5, scale_wb = 1){
+  exp(log(scale_wb) +
+        log(shape_wb) + (shape_wb - 1) * log(t) +  
+        gamma_x + # baseline covariate
+        beta_w + # confounder
+        eta * alpha )
+}
+```
+
+
+
+---
+## $\bar{\eta}(t) \leftrightarrow \bar{h}(t)$ relation
+
+```{r,echo=T, message=F, fig.retina = 6, fig.height=3, fig.width= 10, fig.align='center'}
+hz_bar <- yspline_get() %>%
+  data.frame(check.names = F) %>%
+  mutate(t = 1:nrow(.)) %>%
+  tidyr::pivot_longer(cols = -t,values_to = "eta_bar", names_to = "grps") %>%
+  mutate(h_bar = add_hz(t = t/30,eta = eta_bar)) %>% 
+  tidyr::pivot_longer(cols = c(eta_bar,h_bar), names_to = "param") 
+
+hz_bar %>% ggplot(aes(x = t, y = value, colour = grps)) +
+  geom_line()+
+  ylab(NULL)+
+  facet_wrap(~ param,scales = "free_y")+
+  ggsci::scale_color_jama()
+```
+
+.footnote[NOTE: to show `h_bar` trend, $\gamma$ was set to zero for the plots] 
+---
+## Step 5: Connecting $h_i(t)$ with discrete probabilty of event
+
+
+With $h(t)$ calculation specified, we can use eq. (5.1) to compute discrete 
+probability of event at each time point using numerical integration of $h(t)$.
+
+$$p_{event}(t = t^*) = p(t <= t^*) - p(t < t^*)\;$$
+$$=F(t^*) - F(t^* -1)\;$$
+
+$$= 1 - S(t^*) - (1 - S(t^* -1))\;$$
+
+$$= S(t^* - 1) - S(t^*)\;$$
+
+$$= exp(-H(t^* - 1)) - exp(-H(t^*))\;$$
+$$= e^{\int_{0}^{t^*-1}h(u)du} - e^{\int_{0}^{t^*}h(u)du}\; (5.1)$$
+
+- $S(t)$ is survival function
+- $F(t)$ is the CDF of the event
+- $H(t)$ is cumulative hazard at $t$ and equal to $-ln(S(t))$ see [eq(9)](https://amashadihossein.github.io/jm_intro/#35)
+
+---
+## Step 5: Building the DAG
+
+Putting it all in a single page:
+
+```{r, message=F, echo=TRUE}
+#Generate the simcausal DAG
+set.seed(9)
+t_obs <- 1:30
+t.end <- length(t_obs)
+D <- DAG.empty()
+D <- D +
+  node(name = "w", distr="rbern", prob=0.5) + 
+  node(name = "grps", distr = "rbern", prob = ifelse(w == 0, 0.8, 0.2)) +
+  node(name = "x1", distr = "rnorm", mean = 0, sd = 1/15) +
+  node("unitnoise",t=1, distr="rnorm", mean=0, sd=.05) 
+D <- D  +
+  node("ybar", t = 1:t.end, distr = "aveProfile",time=t, grp=grps, unitnoise= unitnoise[1])+
+  node("y",t = 1:t.end, distr = "rnorm", mean = ybar[t], sd = 0.02)
+
+D <- D + 
+
+  node("event", t = 1, distr="rbern", prob=0, EFU=TRUE) +
+  node("event", t = 2:t.end,
+       distr = "rbern",
+  prob = get_event_p(tobs = 1:t, biomarker_tobs = ybar[1:t],
+                     event = event[t-1],
+                     w = w, x1 = x1,
+                     betaW = 0, betaX1 = 0, alpha = 3,
+                     t.end = t.end), EFU = T)
+
+obj_D <- set.DAG(D, vecfun = "get_event_p")
+
+```
+
+---
+## Step 5: Completing the DAG $\rightarrow$ Visualization
+
+The DAG cut off at $t_{max} = 3$ (for ease of visualization) 
+
+```{r, message=FALSE, echo=T, fig.retina=T, fig.align='center', fig.width= 10, fig.height=6}
+simcausal::plotDAG(obj_D,
+                   edge_attrs = list(arrow.size = 1),
+                   vertex_attrs = list(label.cex = 1.5),
+                   tmax = 3)
+```
+
+---
+## Step 5: Simulation with the assembled DAG
+
+```{r, echo=FALSE, message=FALSE}
+sim_dat <- sim(DAG = obj_D, n = 500, rndseed = 123,wide=F)
+```
+
+```{r, echo=FALSE, message=FALSE, fig.retina=T, fig.align='center', fig.height=6, fig.width=10}
+tmp_d <- sim_dat %>%
+  distinct(ID,grps) %>%
+  group_by(grps) %>%
+  dplyr::sample_n(size = 50) %>%
+  ungroup() %>%
+  left_join(x = ., y= sim_dat) %>%
+  mutate(grps = as.character(grps)) %>%
+  group_by(ID) %>%
+  mutate(tlast = max(t)) %>%
+  mutate(event = as.character(event)) %>%
+  ungroup()
+
+g <- tmp_d %>%
+  ggplot(aes(x = t,y = y, group = ID, colour = grps)) + geom_line(alpha = .2)+
+  geom_point(data = tmp_d %>% filter(t == tlast), mapping = aes(shape = event))+
+  ggsci::scale_color_jama()
+
+plotly::ggplotly(g)
+```
+
+
+---
+class: center, middle
+
+# Evaluating the simulation
+
+---
+
+## Evaluating the TTE outcome
+
+```{r, echo=TRUE, message=FALSE, results='hide'}
+D_a6 <- D + node("event", t = 2:t.end, distr = "rbern",
+                 prob = get_event_p(tobs = 1:t, biomarker_tobs = ybar[1:t],
+                                    event = event[t-1], w = w, x1 = x1, 
+                                    betaW = 0, betaX1 = 0, alpha = 6, 
+                                    t.end = t.end), EFU = T)
+
+obj_D_a6 <- set.DAG(D_a6, vecfun = "get_event_p")
+sim_dat_a6 <- sim(DAG = obj_D_a6, n = 500, rndseed = 123,wide=F)
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, fig.retina=T, fig.align='center', fig.height=4, fig.width=8}
+tmp_d <- sim_dat_a6 %>%
+  distinct(ID,grps) %>%
+  group_by(grps) %>%
+  dplyr::sample_n(size = 50) %>%
+  ungroup() %>%
+  left_join(x = ., y= sim_dat) %>%
+  mutate(grps = as.character(grps)) %>%
+  group_by(ID) %>%
+  mutate(tlast = max(t)) %>%
+  mutate(event = as.character(event)) %>%
+  ungroup()
+
+g <- tmp_d %>%
+  ggplot(aes(x = t,y = y, group = ID, colour = grps)) + geom_line(alpha = .2)+
+  geom_point(data = tmp_d %>% filter(t == tlast), mapping = aes(shape = event))+
+  ggsci::scale_color_jama()
+
+plotly::ggplotly(g)
+```
+
+---
+
+## KM plots
+.pull-left[  
+
+#### $\alpha = 3$
+
+```{r,echo=T, message=FALSE, fig.retina=T, fig.align='center', fig.height=4, fig.width=4}
+sim_dat %>% group_by(ID) %>% mutate(tmax = max(t)) %>% filter(t == tmax) %>%
+  ungroup() %>% mutate(t = as.numeric(t)) ->srv_d
+survminer::ggsurvplot(survfit(Surv(time = t,event = event ) ~ grps, data=srv_d),
+                      pval = T)$plot + ggsci::scale_color_jama()
+```
+]
+
+.pull-right[
+
+#### $\alpha = 6$
+```{r,echo=T, message=FALSE, fig.retina=T, fig.align='center', fig.height=4, fig.width=4}
+sim_dat_a6 %>% group_by(ID) %>% mutate(tmax = max(t)) %>% filter(t == tmax) %>%
+  ungroup() %>% mutate(t = as.numeric(t)) ->srv_d_a6
+survminer::ggsurvplot(survfit(Surv(time = t,event = event ) ~ grps, data=srv_d_a6),
+                      pval = T)$plot + ggsci::scale_color_jama()
+```
+]
+
+---
+## Cumulative hazard plots
+.pull-left[  
+
+#### $\alpha = 3$
+
+```{r,echo=T, message=FALSE, fig.retina=T, results='hide', fig.keep='all', fig.align='center', fig.height=4, fig.width=4}
+ggsurvplot(survfit(Surv(time = t,event = event ) ~ grps, data=srv_d),
+           fun = "cumhaz")$plot + ggsci::scale_color_jama()
+
+```
+]
+
+.pull-right[
+
+#### $\alpha = 6$
+```{r,echo=T, message=FALSE, fig.retina=T, results='hide', fig.keep='all', fig.align='center', fig.height=4, fig.width=4}
+ggsurvplot(survfit(Surv(time = t,event = event ) ~ grps, data=srv_d_a6),
+           fun = "cumhaz")$plot + ggsci::scale_color_jama()
+```
+]
+
