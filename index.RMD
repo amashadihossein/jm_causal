@@ -52,7 +52,7 @@ source("./R/global.R")
 ]
 
 .pull-right[
-### 3- Evaluting the Simulation
+### 3- Evaluating the Simulation
  - [Evaluting the TTE outcome](#22)
  - [KM plots](#23)
  - [Cumulative hazard plots](#24)
@@ -149,7 +149,7 @@ To translated to DAG
 
 
 
-.footnote[NOTE: previous simulation used an AR1 for covairance matrix $D$] 
+.footnote[NOTE: previous simulation used an AR1 for covariance matrix $D$] 
 
 ---
 
