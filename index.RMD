@@ -57,8 +57,8 @@ source("./R/global.R")
  - [KM plots](#23)
  - [Cumulative hazard plots](#24)
 
-### 4- Application
-- [bottom right](#16)
+### 4- Concluding Thoughts
+- [Take away, next steps and acknowledgement](#24)
 
 ]
 
@@ -513,3 +513,17 @@ ggsurvplot(survfit(Surv(time = t,event = event ) ~ grps, data=srv_d_a6),
 ```
 ]
 
+---
+
+## Take away, next steps and acknowledgement
+
+- We can simulate the data of JM flavor with DAG-based causal approach fairly well
+- `simcausal` provides a good amount utility to make setting up complex DAGs feasible
+- Features such as treatment assignment, and flexible effect size estimation via
+selection of targets can greatly assist in exploration of the causal dynamics of
+the data
+
+### Acknowledgments
+
+- Fred Gruber and Brandon Nathasingh for providing assisting with the set up of
+the simulation in `simcausal`
